@@ -8,35 +8,35 @@ public class Result {
     private String url;                              // Website URL
     private int performance;                         // Performance score (0-100)
     private int security;                           // Security score (0-100)
-    private int reliability;                        // Reliability score (0-100)
+    private int seo;                                // SEO score (0-100)
     private int total;                              // Average of all scores
     private String backend;                         // Server software (Apache, nginx, etc.)
     private String protocols;                       // HTTP version and encryption
     private String responseTime;                    // Response time string (e.g., "234 ms")
     private PerformanceDetails performanceDetails;  // Detailed performance info
     private SecurityDetails securityDetails;        // Detailed security info
-    private ReliabilityDetails reliabilityDetails;  // Detailed reliability info
+    private SEODetails seoDetails;                  // Detailed SEO info
 
     // Default constructor
     public Result() {
     }
 
     // Constructor with all fields
-    public Result(String url, int performance, int security, int reliability, int total,
+    public Result(String url, int performance, int security, int seo, int total,
                  String backend, String protocols, String responseTime,
                  PerformanceDetails performanceDetails, SecurityDetails securityDetails,
-                 ReliabilityDetails reliabilityDetails) {
+                 SEODetails seoDetails) {
         this.url = url;
         this.performance = performance;
         this.security = security;
-        this.reliability = reliability;
+        this.seo = seo;
         this.total = total;
         this.backend = backend;
         this.protocols = protocols;
         this.responseTime = responseTime;
         this.performanceDetails = performanceDetails;
         this.securityDetails = securityDetails;
-        this.reliabilityDetails = reliabilityDetails;
+        this.seoDetails = seoDetails;
     }
 
     // Getters and Setters
@@ -49,8 +49,8 @@ public class Result {
     public int getSecurity() { return security; }
     public void setSecurity(int security) { this.security = security; }
 
-    public int getReliability() { return reliability; }
-    public void setReliability(int reliability) { this.reliability = reliability; }
+    public int getSeo() { return seo; }
+    public void setSeo(int seo) { this.seo = seo; }
 
     public int getTotal() { return total; }
     public void setTotal(int total) { this.total = total; }
@@ -74,8 +74,8 @@ public class Result {
         this.securityDetails = details; 
     }
 
-    public ReliabilityDetails getReliabilityDetails() { return reliabilityDetails; }
-    public void setReliabilityDetails(ReliabilityDetails details) { 
-        this.reliabilityDetails = details; 
+    public SEODetails getSeoDetails() { return seoDetails; }
+    public void setSeoDetails(SEODetails details) { 
+        this.seoDetails = details; 
     }
 }

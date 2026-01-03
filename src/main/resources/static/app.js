@@ -24,7 +24,7 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
     }
     const results = await response.json();
 
-    results.forEach(r => r.total = Math.round((r.performance + r.security + r.reliability) / 3));
+    results.forEach(r => r.total = Math.round((r.performance + r.security + r.seo) / 3));
     results.sort((a, b) => b.total - a.total);
 
     // Build table
@@ -36,7 +36,7 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
           <th>Website</th>
           <th>Performance</th>
           <th>Security</th>
-          <th>Reliability</th>
+          <th>SEO</th>
           <th>Overall</th>
           <th>Details</th>
         </tr>
@@ -51,7 +51,7 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
         <td>${r.url}</td>
         <td>${r.performance}</td>
         <td>${r.security}</td>
-        <td>${r.reliability}</td>
+        <td>${r.seo}</td>
         <td><strong>${r.total}</strong></td>
         <td><button class="toggle-btn" data-target="details-${i}">Show</button></td>
       </tr>
@@ -84,13 +84,18 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
               <li><strong>Overall Score:</strong> ${r.security_details.overall_score}</li>
             </ul>
 
-            <h4 style="margin-top: 15px;">Reliability Details</h4>
+            <h4 style="margin-top: 15px;">SEO Details</h4>
             <ul>
-              <li><strong>Status Code:</strong> ${r.reliability_details.status_code}</li>
-              <li><strong>Response Headers Count:</strong> ${r.reliability_details.response_headers_count}</li>
-              <li><strong>Gzip Enabled:</strong> ${r.reliability_details.gzip_enabled ? '✓' : '✗'}</li>
-              <li><strong>Cache Enabled:</strong> ${r.reliability_details.cache_enabled ? '✓' : '✗'}</li>
-              <li><strong>Overall Score:</strong> ${r.reliability_details.overall_score}</li>
+              <li><strong>Page Title:</strong> ${r.seo_details.has_page_title ? '✓' : '✗'}</li>
+              <li><strong>Meta Description:</strong> ${r.seo_details.has_meta_description ? '✓' : '✗'}</li>
+              <li><strong>Meta Tags:</strong> ${r.seo_details.has_meta_tags ? '✓' : '✗'}</li>
+              <li><strong>Heading Structure:</strong> ${r.seo_details.has_heading_structure ? '✓' : '✗'}</li>
+              <li><strong>Mobile-Friendly:</strong> ${r.seo_details.mobile_friendly ? '✓' : '✗'}</li>
+              <li><strong>Canonical Tag:</strong> ${r.seo_details.has_canonical_tag ? '✓' : '✗'}</li>
+              <li><strong>Robots.txt:</strong> ${r.seo_details.has_robots_txt ? '✓' : '✗'}</li>
+              <li><strong>Sitemap.xml:</strong> ${r.seo_details.has_sitemap_xml ? '✓' : '✗'}</li>
+              <li><strong>Image Alt Text:</strong> ${r.seo_details.image_alt_text_percentage}%</li>
+              <li><strong>Overall Score:</strong> ${r.seo_details.overall_score}</li>
             </ul>
           </div>
         </td>

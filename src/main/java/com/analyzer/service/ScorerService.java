@@ -1,8 +1,7 @@
 package com.analyzer.service;
 
-import com.analyzer.config.AnalyzerConfig;
 import com.analyzer.model.PerformanceDetails;
-import com.analyzer.model.ReliabilityDetails;
+import com.analyzer.model.SEODetails;
 import com.analyzer.model.SecurityDetails;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.apache.hc.core5.http.Header;
@@ -10,17 +9,14 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.Arrays;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -30,7 +26,48 @@ import java.util.stream.Collectors;
 @Service
 public class ScorerService {
 
-    private static final Logger logger = LoggerFactory.getLogger(ScorerService.class);
+    @Value("${analyzer.performance.threshold.200}")
+    private int threshold200;
+    
+    @Value("${analyzer.performance.threshold.500}")
+    private int threshold500;
+    
+    @Value("${analyzer.performance.threshold.1000}")
+    private int threshold1000;
+    
+    @Value("${analyzer.performance.threshold.2000}")
+    private int threshold2000;
+    
+    @Value("${analyzer.performance.default-score}")
+    private int defaultScore;
+    
+    @Value("${analyzer.content-size.threshold.300000}")
+    private int contentSizeBonus300k;
+    
+    @Value("${analyzer.content-size.threshold.1000000}")
+    private int contentSizeBonus1m;
+    
+    /**
+     * Get performance thresholds from properties as a sorted Map.
+     */
+    private Map<Integer, Integer> getPerformanceThresholds() {
+        Map<Integer, Integer> thresholds = new HashMap<>();
+        thresholds.put(200, threshold200);
+        thresholds.put(500, threshold500);
+        thresholds.put(1000, threshold1000);
+        thresholds.put(2000, threshold2000);
+        return thresholds;
+    }
+    
+    /**
+     * Get content size limits from properties as a sorted Map.
+     */
+    private Map<Integer, Integer> getContentSizeLimits() {
+        Map<Integer, Integer> limits = new HashMap<>();
+        limits.put(300_000, contentSizeBonus300k);
+        limits.put(1_000_000, contentSizeBonus1m);
+        return limits;
+    }
 
     /**
      * Get backend server software and protocol information.
@@ -72,7 +109,7 @@ public class ScorerService {
                 httpVersion = response.getVersion().format();
             }
         } catch (Exception e) {
-            logger.debug("Could not determine HTTP version", e);
+            // Could not determine HTTP version
         }
 
         boolean isHttps = url.toLowerCase().startsWith("https://");
@@ -80,12 +117,9 @@ public class ScorerService {
     }
 
     /**
-     * Score performance based on:
-     * - Latency (response time)
-     * - Compression (gzip, brotli)
-     * - Caching headers
-     * - Content size
-     * - Broken links
+     * Score performance with individual feature marks (0-100 each).
+     * Features: Latency, Compression, Caching, Content Size
+     * Final score = average of all feature marks
      * 
      * @return Score (0-100) and detailed metrics
      */
@@ -96,180 +130,83 @@ public class ScorerService {
             ));
         }
 
-        int score = 0;
-        int latencyScore = 30; // Default (worst)
-
-        // Latency scoring: faster = better
-        for (Map.Entry<Integer, Integer> entry : AnalyzerConfig.PERFORMANCE_THRESHOLDS.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .collect(Collectors.toList())) {
-            if (elapsedMs <= entry.getKey()) {
-                latencyScore = entry.getValue();
-                score = entry.getValue();
-                break;
-            }
-        }
-
         String compression = "none";
         String cacheControl = "";
         int contentLengthKb = 0;
-        int brokenLinks = 0;
-        int totalLinks = 0;
+        int latencyScore = 0;
+        int compressionScore = 0;
+        int cachingScore = 0;
+        int contentSizeScore = 0;
 
-        if (response == null) {
-            int finalScore = Math.max(0, Math.min(100, score));
-            return new ScoringResult<>(finalScore, new PerformanceDetails(
-                elapsedMs, latencyScore, compression, cacheControl, contentLengthKb, brokenLinks, totalLinks, finalScore
-            ));
-        }
-
-        // Check compression (gzip or brotli)
-        Header encodingHeader = response.getFirstHeader("Content-Encoding");
-        if (encodingHeader != null) {
-            String encoding = encodingHeader.getValue().toLowerCase();
-            if (encoding.contains("gzip") || encoding.contains("br")) {
-                compression = encoding.contains("br") ? "br" : "gzip";
-                score += 10;  // Bonus for compression
-            } else {
-                score -= 10;  // Penalty for no compression
-            }
+        // LATENCY SCORE (0-100): Based on response time
+        if (elapsedMs <= 200) {
+            latencyScore = 100;  // Excellent: < 200ms
+        } else if (elapsedMs <= 500) {
+            latencyScore = 80;   // Good: < 500ms
+        } else if (elapsedMs <= 1000) {
+            latencyScore = 60;   // Fair: < 1s
+        } else if (elapsedMs <= 2000) {
+            latencyScore = 40;   // Poor: < 2s
         } else {
-            score -= 10;
+            latencyScore = 0;    // Very Poor: > 2s
         }
 
-        // Check caching headers
-        Header cacheHeader = response.getFirstHeader("Cache-Control");
-        if (cacheHeader != null) {
-            cacheControl = cacheHeader.getValue();
-            if (cacheControl.contains("max-age")) {
-                score += 10;  // Bonus for caching
-            }
-        }
-
-        // Check content size (smaller is better)
-        Header contentLengthHeader = response.getFirstHeader("Content-Length");
-        if (contentLengthHeader != null) {
-            try {
-                long contentLength = Long.parseLong(contentLengthHeader.getValue());
-                contentLengthKb = (int) (contentLength / 1024);
-                
-                // Give bonus points for smaller pages
-                for (Map.Entry<Integer, Integer> entry : AnalyzerConfig.CONTENT_SIZE_LIMITS.entrySet().stream()
-                        .sorted(Map.Entry.comparingByKey())
-                        .collect(Collectors.toList())) {
-                    if (contentLength <= entry.getKey()) {
-                        score += entry.getValue();
-                        break;
-                    }
+        if (response != null) {
+            // COMPRESSION SCORE (0/50/100): gzip/brotli presence
+            Header encodingHeader = response.getFirstHeader("Content-Encoding");
+            if (encodingHeader != null) {
+                String encoding = encodingHeader.getValue().toLowerCase();
+                if (encoding.contains("br")) {
+                    compressionScore = 100;  // Brotli (best)
+                    compression = "br";
+                } else if (encoding.contains("gzip")) {
+                    compressionScore = 50;   // Gzip (good)
+                    compression = "gzip";
                 }
-            } catch (NumberFormatException e) {
-                logger.debug("Could not parse Content-Length", e);
+            }
+
+            // CACHING SCORE (0/50/100): Cache-Control header
+            Header cacheHeader = response.getFirstHeader("Cache-Control");
+            if (cacheHeader != null) {
+                cacheControl = cacheHeader.getValue();
+                if (cacheControl.contains("public") || cacheControl.contains("immutable")) {
+                    cachingScore = 100;  // Well configured
+                } else if (cacheControl.contains("max-age")) {
+                    cachingScore = 50;   // Basic caching
+                }
+            }
+
+            // CONTENT SIZE SCORE (0/50/100): Page size efficiency
+            Header contentLengthHeader = response.getFirstHeader("Content-Length");
+            if (contentLengthHeader != null) {
+                try {
+                    long contentLength = Long.parseLong(contentLengthHeader.getValue());
+                    contentLengthKb = (int) (contentLength / 1024);
+                    
+                    if (contentLength <= 300_000) {
+                        contentSizeScore = 100;  // < 300 KB (excellent)
+                    } else if (contentLength <= 1_000_000) {
+                        contentSizeScore = 50;   // < 1 MB (acceptable)
+                    }
+                } catch (NumberFormatException e) {
+                    // Could not parse Content-Length
+                }
             }
         }
 
-        // Check for broken links
-        LinkCheckResult linkCheck = checkBrokenLinks(htmlContent, baseUrl);
-        brokenLinks = linkCheck.brokenLinks;
-        totalLinks = linkCheck.totalLinks;
+        // Final score = average of all 4 features
+        int finalScore = (latencyScore + compressionScore + cachingScore + contentSizeScore) / 4;
+        finalScore = Math.max(0, Math.min(100, finalScore));
         
-        // Scoring for broken links: 0 broken = +10, 1-2 broken = +5, 3+ broken = 0
-        if (brokenLinks == 0 && totalLinks > 0) {
-            score += 10;
-        } else if (brokenLinks <= 2 && totalLinks > 0) {
-            score += 5;
-        }
-
-        int finalScore = Math.max(0, Math.min(100, score));
         return new ScoringResult<>(finalScore, new PerformanceDetails(
-            elapsedMs, latencyScore, compression, cacheControl, contentLengthKb, brokenLinks, totalLinks, finalScore
+            elapsedMs, latencyScore, compression, cacheControl, contentLengthKb, 0, 0, finalScore
         ));
     }
 
     /**
-     * Check for broken links on the page using Jsoup.
-     * 
-     * Process:
-     * 1. Parse HTML with Jsoup
-     * 2. Find all <a> tags with href attributes
-     * 3. Filter out anchors (#), javascript:, mailto:, tel:
-     * 4. Check first 10 unique links (to avoid timeout)
-     * 5. Send HEAD request to each link
-     * 6. Count how many return 404 or error status
-     */
-    private LinkCheckResult checkBrokenLinks(String htmlContent, String baseUrl) {
-        if (htmlContent == null || htmlContent.isEmpty()) {
-            return new LinkCheckResult(0, 0);
-        }
-
-        try {
-            // Parse HTML with Jsoup
-            Document doc = Jsoup.parse(htmlContent, baseUrl);
-            
-            // Extract all links
-            Elements links = doc.select("a[href]");
-            Set<String> uniqueLinks = new HashSet<>();
-            
-            for (Element link : links) {
-                String href = link.absUrl("href");
-                
-                // Filter out non-HTTP links and anchors
-                if (href != null && !href.isEmpty() 
-                        && (href.startsWith("http://") || href.startsWith("https://"))
-                        && !href.contains("javascript:")
-                        && !href.contains("mailto:")
-                        && !href.contains("tel:")) {
-                    uniqueLinks.add(href);
-                }
-                
-                // Limit to 10 links to avoid long processing time
-                if (uniqueLinks.size() >= 10) {
-                    break;
-                }
-            }
-            
-            int brokenCount = 0;
-            for (String linkUrl : uniqueLinks) {
-                if (!isLinkValid(linkUrl)) {
-                    brokenCount++;
-                }
-            }
-            
-            logger.debug("Link check: {} broken out of {} links", brokenCount, uniqueLinks.size());
-            return new LinkCheckResult(brokenCount, uniqueLinks.size());
-            
-        } catch (Exception e) {
-            logger.warn("Error checking broken links: {}", e.getMessage());
-            return new LinkCheckResult(0, 0);
-        }
-    }
-
-    /**
-     * Check if a single link is valid (returns HTTP 200-399).
-     * Uses HEAD request for efficiency.
-     */
-    private boolean isLinkValid(String linkUrl) {
-        try {
-            URL url = new URL(linkUrl);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("HEAD");
-            connection.setConnectTimeout(3000);  // 3 second timeout
-            connection.setReadTimeout(3000);
-            connection.setInstanceFollowRedirects(true);
-            
-            int responseCode = connection.getResponseCode();
-            connection.disconnect();
-            
-            // Consider 2xx and 3xx as valid
-            return responseCode >= 200 && responseCode < 400;
-        } catch (Exception e) {
-            // Any exception (timeout, DNS error, etc.) = broken link
-            return false;
-        }
-    }
-
-    /**
-     * Score security based on HTTPS and security headers.
-     * Checks 6 important security practices.
+     * Score security with individual header marks (0 or 100 each).
+     * Features: HTTPS, HSTS, CSP, X-Content-Type-Options, X-Frame-Options
+     * Final score = average of all feature marks
      * 
      * @return Score (0-100) and detailed check results
      */
@@ -280,129 +217,132 @@ public class ScorerService {
             ));
         }
 
-        int score = 0;
-        List<String> detailsList = new java.util.ArrayList<>();
+        int httpsScore = 0;
+        int hstsScore = 0;
+        int cspScore = 0;
+        int xContentTypeScore = 0;
+        int xFrameScore = 0;
 
-        // 1. HTTPS check (30 points)
+        // 1. HTTPS: 0 or 100
         boolean https = url.toLowerCase().startsWith("https://");
-        if (https) {
-            score += 30;
-            detailsList.add("HTTPS:✓");
-        } else {
-            detailsList.add("HTTPS:✗");
-        }
+        httpsScore = https ? 100 : 0;
 
-        // 2. HSTS (HTTP Strict Transport Security) - forces HTTPS (20 points)
+        // 2. HSTS: 0 or 100
         boolean hsts = response.getFirstHeader("Strict-Transport-Security") != null;
-        if (hsts) {
-            score += 20;
-            detailsList.add("HSTS:✓");
-        } else {
-            detailsList.add("HSTS:✗");
-        }
+        hstsScore = hsts ? 100 : 0;
 
-        // 3. CSP (Content Security Policy) - prevents XSS attacks (20 points)
+        // 3. CSP: 0 or 100
         boolean csp = response.getFirstHeader("Content-Security-Policy") != null;
-        if (csp) {
-            score += 20;
-            detailsList.add("CSP:✓");
-        } else {
-            detailsList.add("CSP:✗");
-        }
+        cspScore = csp ? 100 : 0;
 
-        // 4. X-Content-Type-Options - prevents MIME type sniffing (10 points)
+        // 4. X-Content-Type-Options: 0 or 100
         Header xContentTypeHeader = response.getFirstHeader("X-Content-Type-Options");
         boolean xContentTypeOptions = xContentTypeHeader != null && 
                 xContentTypeHeader.getValue().toLowerCase().equals("nosniff");
-        if (xContentTypeOptions) {
-            score += 10;
-            detailsList.add("X-Content-Type-Options:✓");
-        } else {
-            detailsList.add("X-Content-Type-Options:✗");
-        }
+        xContentTypeScore = xContentTypeOptions ? 100 : 0;
 
-        // 5. X-Frame-Options - prevents clickjacking (10 points)
+        // 5. X-Frame-Options: 0 or 100
         Header xfoHeader = response.getFirstHeader("X-Frame-Options");
         Header cspHeader = response.getFirstHeader("Content-Security-Policy");
         boolean xFrameOptions = xfoHeader != null || 
                 (cspHeader != null && cspHeader.getValue().contains("frame-ancestors"));
-        if (xFrameOptions) {
-            score += 10;
-            detailsList.add("X-Frame-Options:✓");
-        } else {
-            detailsList.add("X-Frame-Options:✗");
-        }
+        xFrameScore = xFrameOptions ? 100 : 0;
 
-        // 6. Referrer Policy - controls referrer information (10 points)
-        boolean referrerPolicy = response.getFirstHeader("Referrer-Policy") != null;
-        if (referrerPolicy) {
-            score += 10;
-            detailsList.add("Referrer-Policy:✓");
-        } else {
-            detailsList.add("Referrer-Policy:✗");
-        }
-
-        int finalScore = Math.max(0, Math.min(100, score));
-        logger.info("  Security headers: {} = {}", String.join(" | ", detailsList), finalScore);
+        // Final score = average of all 5 security headers
+        int finalScore = (httpsScore + hstsScore + cspScore + xContentTypeScore + xFrameScore) / 5;
+        finalScore = Math.max(0, Math.min(100, finalScore));
 
         return new ScoringResult<>(finalScore, new SecurityDetails(
-            https, hsts, csp, xContentTypeOptions, xFrameOptions, referrerPolicy, finalScore
+            https, hsts, csp, xContentTypeOptions, xFrameOptions, false, finalScore
         ));
     }
 
     /**
-     * Score reliability based on HTTP response.
-     * Indicates how well the server responds.
+     * Score SEO with individual feature marks (0-100 each).
+     * Features: Page Title, Meta Description, Heading Structure, Mobile Friendly, Image Alt Text
+     * Final score = average of all feature marks
      * 
      * @return Score (0-100) and detailed metrics
      */
-    public ScoringResult<ReliabilityDetails> scoreReliability(CloseableHttpResponse response) {
-        if (response == null) {
-            return new ScoringResult<>(0, new ReliabilityDetails(
-                0, 0, false, false, 0
+    public ScoringResult<SEODetails> scoreSEO(String htmlContent) {
+        if (htmlContent == null || htmlContent.isEmpty()) {
+            return new ScoringResult<>(0, new SEODetails(
+                false, false, false, false, false, false, 0, false, false, 0
             ));
         }
 
-        int score = 50; // Baseline for successful responses
-        int statusCode = response.getCode();
+        int pageTitleScore = 0;
+        int metaDescScore = 0;
+        int headingScore = 0;
+        int mobileScore = 0;
+        int altTextScore = 0;
 
-        // Status code check
-        if (statusCode >= 200 && statusCode < 300) {
-            score += 30;  // Success responses (200 OK, etc.)
-        } else if (statusCode >= 300 && statusCode < 400) {
-            score += 15;  // Redirects (301, 302, etc.)
-        } else {
-            score = 20;  // Errors (404, 500, etc.) - low reliability
-        }
-
-        // Response headers count (more headers = more complete response)
-        int headersCount = response.getHeaders().length;
-        if (headersCount > 20) {
-            score += 10;
-        } else if (headersCount > 10) {
-            score += 5;
-        }
-
-        // Compression (gzip/brotli)
-        Header encodingHeader = response.getFirstHeader("Content-Encoding");
-        boolean gzipEnabled = encodingHeader != null && 
-                (encodingHeader.getValue().toLowerCase().contains("gzip") || 
-                 encodingHeader.getValue().toLowerCase().contains("br"));
-        if (gzipEnabled) {
-            score += 5;
-        }
-
-        // Caching (Cache-Control or ETag present)
-        boolean cacheEnabled = response.getFirstHeader("Cache-Control") != null || 
-                response.getFirstHeader("ETag") != null;
-        if (cacheEnabled) {
-            score += 10;
-        }
-
-        int finalScore = Math.max(0, Math.min(100, score));
+        // Parse HTML
+        Document doc = Jsoup.parse(htmlContent);
         
-        return new ScoringResult<>(finalScore, new ReliabilityDetails(
-            statusCode, headersCount, gzipEnabled, cacheEnabled, finalScore
+        // PAGE TITLE: 0 if missing, 50 if present, 100 if optimal length (20-60 chars)
+        Element titleTag = doc.selectFirst("title");
+        boolean hasPageTitle = false;
+        if (titleTag != null) {
+            int titleLength = titleTag.text().length();
+            if (titleLength >= 20 && titleLength <= 60) {
+                pageTitleScore = 100;  // Optimal
+                hasPageTitle = true;
+            } else if (titleLength > 0) {
+                pageTitleScore = 50;   // Present but not optimal
+            }
+        }
+
+        // META DESCRIPTION: 0 if missing, 50 if present, 100 if optimal length (120-160 chars)
+        Element metaDescription = doc.selectFirst("meta[name=description]");
+        boolean hasMetaTags = metaDescription != null;
+        boolean hasMetaDescriptionOptimal = false;
+        if (metaDescription != null) {
+            String description = metaDescription.attr("content");
+            int descLength = description.length();
+            if (descLength >= 120 && descLength <= 160) {
+                metaDescScore = 100;  // Optimal
+                hasMetaDescriptionOptimal = true;
+            } else if (descLength > 0) {
+                metaDescScore = 50;   // Present but not optimal
+            }
+        }
+
+        // HEADING STRUCTURE: 0 if no H1, 50 if H1 only, 100 if H1+H2+
+        Elements h1Tags = doc.select("h1");
+        Elements h2Tags = doc.select("h2");
+        boolean hasHeadingStructure = h1Tags.size() > 0 && h2Tags.size() > 0;
+        if (h1Tags.size() > 0 && h2Tags.size() > 0) {
+            headingScore = 100;  // Proper structure
+        } else if (h1Tags.size() > 0) {
+            headingScore = 50;   // Basic structure
+        }
+
+        // MOBILE FRIENDLY: 0 if no viewport, 100 if viewport meta tag present
+        Element viewportTag = doc.selectFirst("meta[name=viewport]");
+        boolean isMobileFriendly = viewportTag != null;
+        mobileScore = isMobileFriendly ? 100 : 0;
+
+        // IMAGE ALT TEXT: 0-100 based on percentage of images with alt text
+        Elements images = doc.select("img");
+        int imagesWithAlt = 0;
+        for (Element img : images) {
+            if (img.hasAttr("alt") && !img.attr("alt").isEmpty()) {
+                imagesWithAlt++;
+            }
+        }
+        int imageAltTextPercentage = images.size() > 0 ? 
+            Math.round((imagesWithAlt * 100f) / images.size()) : 0;
+        altTextScore = imageAltTextPercentage;  // Direct percentage 0-100
+
+        // Final score = average of all 5 SEO features
+        int finalScore = (pageTitleScore + metaDescScore + headingScore + mobileScore + altTextScore) / 5;
+        finalScore = Math.max(0, Math.min(100, finalScore));
+        
+        return new ScoringResult<>(finalScore, new SEODetails(
+            hasMetaTags, hasHeadingStructure, isMobileFriendly, false,
+            false, false, imageAltTextPercentage, hasPageTitle,
+            hasMetaDescriptionOptimal, finalScore
         ));
     }
 
@@ -433,16 +373,4 @@ public class ScorerService {
         }
     }
 
-    /**
-     * Container for link check results.
-     */
-    private static class LinkCheckResult {
-        public final int brokenLinks;
-        public final int totalLinks;
-
-        public LinkCheckResult(int brokenLinks, int totalLinks) {
-            this.brokenLinks = brokenLinks;
-            this.totalLinks = totalLinks;
-        }
-    }
 }

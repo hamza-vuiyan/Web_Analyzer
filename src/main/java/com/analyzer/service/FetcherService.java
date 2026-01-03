@@ -1,6 +1,5 @@
 package com.analyzer.service;
 
-import com.analyzer.config.AnalyzerConfig;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
@@ -12,11 +11,9 @@ import org.apache.hc.core5.http.HttpHeaders;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.ssl.SSLContextBuilder;
 import org.apache.hc.core5.util.Timeout;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.PreDestroy;
 import javax.net.ssl.SSLContext;
 
 /**
@@ -26,8 +23,25 @@ import javax.net.ssl.SSLContext;
 @Service
 public class FetcherService {
 
-    private static final Logger logger = LoggerFactory.getLogger(FetcherService.class);
     private final CloseableHttpClient httpClient;
+    
+    @Value("${http.client.timeout}")
+    private int httpTimeout;
+    
+    @Value("${http.client.user-agent}")
+    private String httpUserAgent;
+    
+    @Value("${http.client.accept}")
+    private String httpAccept;
+    
+    @Value("${http.client.accept-language}")
+    private String httpAcceptLanguage;
+    
+    @Value("${http.client.accept-encoding}")
+    private String httpAcceptEncoding;
+    
+    @Value("${http.client.connection}")
+    private String httpConnection;
 
     public FetcherService() {
         // Initialize HTTP client when service starts
@@ -55,8 +69,8 @@ public class FetcherService {
 
             // Configure timeouts
             RequestConfig requestConfig = RequestConfig.custom()
-                    .setConnectionRequestTimeout(Timeout.ofMilliseconds(AnalyzerConfig.HTTP_TIMEOUT))
-                    .setResponseTimeout(Timeout.ofMilliseconds(AnalyzerConfig.HTTP_TIMEOUT))
+                    .setConnectionRequestTimeout(Timeout.ofMilliseconds(httpTimeout))
+                    .setResponseTimeout(Timeout.ofMilliseconds(httpTimeout))
                     .build();
 
             // Build client with connection pooling and SSL
@@ -71,17 +85,11 @@ public class FetcherService {
                     .setDefaultRequestConfig(requestConfig)
                     .build();
         } catch (Exception e) {
-            logger.error("Failed to create HTTP client", e);
             throw new RuntimeException("Failed to create HTTP client", e);
         }
     }
 
-    /**
-     * Normalize URL by adding https:// if no protocol is specified.
-     * Examples:
-     *   "google.com" -> "https://google.com"
-     *   "http://example.com" -> "http://example.com" (unchanged)
-     */
+
     public String normalizeUrl(String url) {
         if (url == null || url.trim().isEmpty()) {
             return "";
@@ -93,6 +101,7 @@ public class FetcherService {
         return url;
     }
 
+    
     /**
      * Fetch a webpage and measure response time.
      * Also extracts HTML content for link analysis.
@@ -120,20 +129,17 @@ public class FetcherService {
                 String htmlContent = null;
                 try {
                     htmlContent = EntityUtils.toString(response.getEntity());
-                    logger.info("✓ {} | {} | {}ms | {} bytes", url, statusCode, 
-                            String.format("%.0f", elapsedMs), htmlContent.length());
                 } catch (Exception e) {
-                    logger.warn("Could not extract HTML content: {}", e.getMessage());
+                    // Could not extract HTML content
                 }
                 return new FetchResult(response, elapsedMs, htmlContent, null);
             } else {
-                logger.warn("✗ {} | Status: {}", url, statusCode);
+                // Non-success HTTP status
                 try { response.close(); } catch (Exception ignored) {}
                 return new FetchResult(null, null, null, "HTTP Status: " + statusCode);
             }
         } catch (Exception e) {
-            logger.warn("✗ {} (HTTPS) | {}: {}", url, e.getClass().getSimpleName(), 
-                    e.getMessage() != null ? e.getMessage().substring(0, Math.min(100, e.getMessage().length())) : "");
+            // HTTPS attempt failed
             
             // Fallback: try HTTP if URL started with HTTPS
             if (url.toLowerCase().startsWith("https://")) {
@@ -150,20 +156,17 @@ public class FetcherService {
                         String htmlContent = null;
                         try {
                             htmlContent = EntityUtils.toString(response.getEntity());
-                            logger.info("✓ {} (fallback) | {} | {}ms | {} bytes", httpUrl, statusCode, 
-                                    String.format("%.0f", elapsedMs), htmlContent.length());
                         } catch (Exception e3) {
-                            logger.warn("Could not extract HTML content: {}", e3.getMessage());
+                            // Could not extract HTML content
                         }
                         return new FetchResult(response, elapsedMs, htmlContent, null);
                     } else {
-                        logger.warn("✗ {} (HTTP fallback) | Status: {}", httpUrl, statusCode);
+                        // HTTP fallback non-success status
                         try { response.close(); } catch (Exception ignored) {}
                         return new FetchResult(null, null, null, "Both HTTPS and HTTP failed");
                     }
                 } catch (Exception e2) {
-                    logger.warn("✗ HTTP fallback | {}: {}", e2.getClass().getSimpleName(),
-                            e2.getMessage() != null ? e2.getMessage().substring(0, Math.min(100, e2.getMessage().length())) : "");
+                    // HTTP fallback failed
                     return new FetchResult(null, null, null, "Both HTTPS and HTTP failed");
                 }
             }
@@ -179,12 +182,11 @@ public class FetcherService {
     private HttpGet createRequest(String url) {
         HttpGet request = new HttpGet(url);
         // Add all configured headers
-        AnalyzerConfig.HTTP_HEADERS.forEach((key, value) -> {
-            if (!key.equals(HttpHeaders.USER_AGENT)) {
-                request.setHeader(key, value);
-            }
-        });
-        request.setHeader(HttpHeaders.USER_AGENT, AnalyzerConfig.HTTP_USER_AGENT);
+        request.setHeader(HttpHeaders.ACCEPT, httpAccept);
+        request.setHeader(HttpHeaders.ACCEPT_LANGUAGE, httpAcceptLanguage);
+        request.setHeader(HttpHeaders.ACCEPT_ENCODING, httpAcceptEncoding);
+        request.setHeader(HttpHeaders.CONNECTION, httpConnection);
+        request.setHeader(HttpHeaders.USER_AGENT, httpUserAgent);
         return request;
     }
 
