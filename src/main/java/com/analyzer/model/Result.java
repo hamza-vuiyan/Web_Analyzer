@@ -1,27 +1,22 @@
 package com.analyzer.model;
 
-/**
- * Complete analysis result for a single website.
- * This is what gets returned to the frontend for display.
- */
+/** Complete analysis result for a single website. */
 public class Result {
-    private String url;                              // Website URL
-    private int performance;                         // Performance score (0-100)
-    private int security;                           // Security score (0-100)
-    private int seo;                                // SEO score (0-100)
-    private int total;                              // Average of all scores
-    private String backend;                         // Server software (Apache, nginx, etc.)
-    private String protocols;                       // HTTP version and encryption
-    private String responseTime;                    // Response time string (e.g., "234 ms")
-    private PerformanceDetails performanceDetails;  // Detailed performance info
-    private SecurityDetails securityDetails;        // Detailed security info
-    private SEODetails seoDetails;                  // Detailed SEO info
+    private String url;
+    private int performance;
+    private int security;
+    private int seo;
+    private int total;
+    private String backend;
+    private String protocols;
+    private String responseTime;
+    private PerformanceDetails performanceDetails;
+    private SecurityDetails securityDetails;
+    private SEODetails seoDetails;
 
-    // Default constructor
     public Result() {
     }
 
-    // Constructor with all fields
     public Result(String url, int performance, int security, int seo, int total,
                  String backend, String protocols, String responseTime,
                  PerformanceDetails performanceDetails, SecurityDetails securityDetails,
@@ -39,7 +34,6 @@ public class Result {
         this.seoDetails = seoDetails;
     }
 
-    // Getters and Setters
     public String getUrl() { return url; }
     public void setUrl(String url) { this.url = url; }
 

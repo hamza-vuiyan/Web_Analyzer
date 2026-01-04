@@ -1,26 +1,21 @@
 package com.analyzer.model;
 
-/**
- * SEO (Search Engine Optimization) metrics for a website.
- * Evaluates how well-optimized a website is for search engines.
- */
+/** SEO (Search Engine Optimization) metrics for a website. */
 public class SEODetails {
-    private boolean hasMetaTags;            // Has meta description and keywords
-    private boolean hasHeadingStructure;    // Has proper H1, H2, H3 structure
-    private boolean isMobileFriendly;       // Has mobile viewport meta tag
-    private boolean hasCanonicalTag;        // Has canonical URL tag
-    private boolean hasRobotsTxt;           // Has robots.txt accessible
-    private boolean hasSitemapXml;          // Has sitemap.xml
-    private int imageAltTextPercentage;     // Percentage of images with alt text
-    private boolean hasPageTitle;           // Has proper page title (3-60 chars)
-    private boolean hasMetaDescription;     // Has meta description (120-160 chars)
-    private int overallScore;               // Total SEO score (0-100)
+    private boolean hasMetaTags;
+    private boolean hasHeadingStructure;
+    private boolean isMobileFriendly;
+    private boolean hasCanonicalTag;
+    private boolean hasRobotsTxt;
+    private boolean hasSitemapXml;
+    private int imageAltTextPercentage;
+    private boolean hasPageTitle;
+    private boolean hasMetaDescription;
+    private int overallScore;
 
-    // Default constructor
     public SEODetails() {
     }
 
-    // Constructor with all fields
     public SEODetails(boolean hasMetaTags, boolean hasHeadingStructure, 
                       boolean isMobileFriendly, boolean hasCanonicalTag,
                       boolean hasRobotsTxt, boolean hasSitemapXml,
@@ -38,7 +33,6 @@ public class SEODetails {
         this.overallScore = overallScore;
     }
 
-    // Getters and Setters
     public boolean isHasMetaTags() { return hasMetaTags; }
     public void setHasMetaTags(boolean hasMetaTags) { this.hasMetaTags = hasMetaTags; }
 

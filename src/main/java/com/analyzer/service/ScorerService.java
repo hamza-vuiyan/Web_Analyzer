@@ -19,10 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * Service for scoring website performance, security, and reliability.
- * Each scoring method examines different aspects and returns a 0-100 score.
- */
+/** Service for scoring website performance, security, and SEO. */
 @Service
 public class ScorerService {
 
@@ -47,9 +44,6 @@ public class ScorerService {
     @Value("${analyzer.content-size.threshold.1000000}")
     private int contentSizeBonus1m;
     
-    /**
-     * Get performance thresholds from properties as a sorted Map.
-     */
     private Map<Integer, Integer> getPerformanceThresholds() {
         Map<Integer, Integer> thresholds = new HashMap<>();
         thresholds.put(200, threshold200);
@@ -59,9 +53,6 @@ public class ScorerService {
         return thresholds;
     }
     
-    /**
-     * Get content size limits from properties as a sorted Map.
-     */
     private Map<Integer, Integer> getContentSizeLimits() {
         Map<Integer, Integer> limits = new HashMap<>();
         limits.put(300_000, contentSizeBonus300k);
@@ -69,10 +60,6 @@ public class ScorerService {
         return limits;
     }
 
-    /**
-     * Get backend server software and protocol information.
-     * Examples: "Apache/2.4.41", "nginx/1.18.0"
-     */
     public BackendProtocol getBackendAndProtocol(CloseableHttpResponse response, String url) {
         if (response == null) {
             return new BackendProtocol("Unknown", "Unknown");
@@ -84,9 +71,6 @@ public class ScorerService {
         return new BackendProtocol(backend, protocol);
     }
 
-    /**
-     * Extract backend/server info from response headers.
-     */
     private String getBackendInfo(CloseableHttpResponse response) {
         Header serverHeader = response.getFirstHeader("Server");
         Header poweredHeader = response.getFirstHeader("X-Powered-By");
@@ -99,30 +83,19 @@ public class ScorerService {
         return parts.isEmpty() ? "Unknown" : String.join(", ", parts);
     }
 
-    /**
-     * Get protocol information (HTTP version and encryption).
-     */
     private String getProtocolInfo(CloseableHttpResponse response, String url) {
-        String httpVersion = "HTTP/1.1"; // Default
+        String httpVersion = "HTTP/1.1";
         try {
             if (response.getVersion() != null) {
                 httpVersion = response.getVersion().format();
             }
         } catch (Exception e) {
-            // Could not determine HTTP version
         }
 
         boolean isHttps = url.toLowerCase().startsWith("https://");
         return isHttps ? httpVersion + " over TLS" : httpVersion;
     }
 
-    /**
-     * Score performance with individual feature marks (0-100 each).
-     * Features: Latency, Compression, Caching, Content Size
-     * Final score = average of all feature marks
-     * 
-     * @return Score (0-100) and detailed metrics
-     */
     public ScoringResult<PerformanceDetails> scorePerformance(Double elapsedMs, CloseableHttpResponse response, String htmlContent, String baseUrl) {
         if (elapsedMs == null) {
             return new ScoringResult<>(0, new PerformanceDetails(
@@ -138,45 +111,41 @@ public class ScorerService {
         int cachingScore = 0;
         int contentSizeScore = 0;
 
-        // LATENCY SCORE (0-100): Based on response time
         if (elapsedMs <= 200) {
-            latencyScore = 100;  // Excellent: < 200ms
+            latencyScore = 100;
         } else if (elapsedMs <= 500) {
-            latencyScore = 80;   // Good: < 500ms
+            latencyScore = 80;
         } else if (elapsedMs <= 1000) {
-            latencyScore = 60;   // Fair: < 1s
+            latencyScore = 60;
         } else if (elapsedMs <= 2000) {
-            latencyScore = 40;   // Poor: < 2s
+            latencyScore = 40;
         } else {
-            latencyScore = 0;    // Very Poor: > 2s
+            latencyScore = 0;
         }
 
         if (response != null) {
-            // COMPRESSION SCORE (0/50/100): gzip/brotli presence
             Header encodingHeader = response.getFirstHeader("Content-Encoding");
             if (encodingHeader != null) {
                 String encoding = encodingHeader.getValue().toLowerCase();
                 if (encoding.contains("br")) {
-                    compressionScore = 100;  // Brotli (best)
+                    compressionScore = 100;
                     compression = "br";
                 } else if (encoding.contains("gzip")) {
-                    compressionScore = 50;   // Gzip (good)
+                    compressionScore = 50;
                     compression = "gzip";
                 }
             }
 
-            // CACHING SCORE (0/50/100): Cache-Control header
             Header cacheHeader = response.getFirstHeader("Cache-Control");
             if (cacheHeader != null) {
                 cacheControl = cacheHeader.getValue();
                 if (cacheControl.contains("public") || cacheControl.contains("immutable")) {
-                    cachingScore = 100;  // Well configured
+                    cachingScore = 100;
                 } else if (cacheControl.contains("max-age")) {
-                    cachingScore = 50;   // Basic caching
+                    cachingScore = 50;
                 }
             }
 
-            // CONTENT SIZE SCORE (0/50/100): Page size efficiency
             Header contentLengthHeader = response.getFirstHeader("Content-Length");
             if (contentLengthHeader != null) {
                 try {
@@ -184,17 +153,15 @@ public class ScorerService {
                     contentLengthKb = (int) (contentLength / 1024);
                     
                     if (contentLength <= 300_000) {
-                        contentSizeScore = 100;  // < 300 KB (excellent)
+                        contentSizeScore = 100;
                     } else if (contentLength <= 1_000_000) {
-                        contentSizeScore = 50;   // < 1 MB (acceptable)
+                        contentSizeScore = 50;
                     }
                 } catch (NumberFormatException e) {
-                    // Could not parse Content-Length
                 }
             }
         }
 
-        // Final score = average of all 4 features
         int finalScore = (latencyScore + compressionScore + cachingScore + contentSizeScore) / 4;
         finalScore = Math.max(0, Math.min(100, finalScore));
         
@@ -203,13 +170,6 @@ public class ScorerService {
         ));
     }
 
-    /**
-     * Score security with individual header marks (0 or 100 each).
-     * Features: HTTPS, HSTS, CSP, X-Content-Type-Options, X-Frame-Options
-     * Final score = average of all feature marks
-     * 
-     * @return Score (0-100) and detailed check results
-     */
     public ScoringResult<SecurityDetails> scoreSecurity(String url, CloseableHttpResponse response) {
         if (response == null) {
             return new ScoringResult<>(0, new SecurityDetails(
@@ -223,32 +183,26 @@ public class ScorerService {
         int xContentTypeScore = 0;
         int xFrameScore = 0;
 
-        // 1. HTTPS: 0 or 100
         boolean https = url.toLowerCase().startsWith("https://");
         httpsScore = https ? 100 : 0;
 
-        // 2. HSTS: 0 or 100
         boolean hsts = response.getFirstHeader("Strict-Transport-Security") != null;
         hstsScore = hsts ? 100 : 0;
 
-        // 3. CSP: 0 or 100
         boolean csp = response.getFirstHeader("Content-Security-Policy") != null;
         cspScore = csp ? 100 : 0;
 
-        // 4. X-Content-Type-Options: 0 or 100
         Header xContentTypeHeader = response.getFirstHeader("X-Content-Type-Options");
         boolean xContentTypeOptions = xContentTypeHeader != null && 
                 xContentTypeHeader.getValue().toLowerCase().equals("nosniff");
         xContentTypeScore = xContentTypeOptions ? 100 : 0;
 
-        // 5. X-Frame-Options: 0 or 100
         Header xfoHeader = response.getFirstHeader("X-Frame-Options");
         Header cspHeader = response.getFirstHeader("Content-Security-Policy");
         boolean xFrameOptions = xfoHeader != null || 
                 (cspHeader != null && cspHeader.getValue().contains("frame-ancestors"));
         xFrameScore = xFrameOptions ? 100 : 0;
 
-        // Final score = average of all 5 security headers
         int finalScore = (httpsScore + hstsScore + cspScore + xContentTypeScore + xFrameScore) / 5;
         finalScore = Math.max(0, Math.min(100, finalScore));
 
@@ -257,13 +211,6 @@ public class ScorerService {
         ));
     }
 
-    /**
-     * Score SEO with individual feature marks (0-100 each).
-     * Features: Page Title, Meta Description, Heading Structure, Mobile Friendly, Image Alt Text
-     * Final score = average of all feature marks
-     * 
-     * @return Score (0-100) and detailed metrics
-     */
     public ScoringResult<SEODetails> scoreSEO(String htmlContent) {
         if (htmlContent == null || htmlContent.isEmpty()) {
             return new ScoringResult<>(0, new SEODetails(
@@ -277,23 +224,20 @@ public class ScorerService {
         int mobileScore = 0;
         int altTextScore = 0;
 
-        // Parse HTML
         Document doc = Jsoup.parse(htmlContent);
         
-        // PAGE TITLE: 0 if missing, 50 if present, 100 if optimal length (20-60 chars)
         Element titleTag = doc.selectFirst("title");
         boolean hasPageTitle = false;
         if (titleTag != null) {
             int titleLength = titleTag.text().length();
             if (titleLength >= 20 && titleLength <= 60) {
-                pageTitleScore = 100;  // Optimal
+                pageTitleScore = 100;
                 hasPageTitle = true;
             } else if (titleLength > 0) {
-                pageTitleScore = 50;   // Present but not optimal
+                pageTitleScore = 50;
             }
         }
 
-        // META DESCRIPTION: 0 if missing, 50 if present, 100 if optimal length (120-160 chars)
         Element metaDescription = doc.selectFirst("meta[name=description]");
         boolean hasMetaTags = metaDescription != null;
         boolean hasMetaDescriptionOptimal = false;
@@ -301,29 +245,26 @@ public class ScorerService {
             String description = metaDescription.attr("content");
             int descLength = description.length();
             if (descLength >= 120 && descLength <= 160) {
-                metaDescScore = 100;  // Optimal
+                metaDescScore = 100;
                 hasMetaDescriptionOptimal = true;
             } else if (descLength > 0) {
-                metaDescScore = 50;   // Present but not optimal
+                metaDescScore = 50;
             }
         }
 
-        // HEADING STRUCTURE: 0 if no H1, 50 if H1 only, 100 if H1+H2+
         Elements h1Tags = doc.select("h1");
         Elements h2Tags = doc.select("h2");
         boolean hasHeadingStructure = h1Tags.size() > 0 && h2Tags.size() > 0;
         if (h1Tags.size() > 0 && h2Tags.size() > 0) {
-            headingScore = 100;  // Proper structure
+            headingScore = 100;
         } else if (h1Tags.size() > 0) {
-            headingScore = 50;   // Basic structure
+            headingScore = 50;
         }
 
-        // MOBILE FRIENDLY: 0 if no viewport, 100 if viewport meta tag present
         Element viewportTag = doc.selectFirst("meta[name=viewport]");
         boolean isMobileFriendly = viewportTag != null;
         mobileScore = isMobileFriendly ? 100 : 0;
 
-        // IMAGE ALT TEXT: 0-100 based on percentage of images with alt text
         Elements images = doc.select("img");
         int imagesWithAlt = 0;
         for (Element img : images) {
@@ -333,9 +274,8 @@ public class ScorerService {
         }
         int imageAltTextPercentage = images.size() > 0 ? 
             Math.round((imagesWithAlt * 100f) / images.size()) : 0;
-        altTextScore = imageAltTextPercentage;  // Direct percentage 0-100
+        altTextScore = imageAltTextPercentage;
 
-        // Final score = average of all 5 SEO features
         int finalScore = (pageTitleScore + metaDescScore + headingScore + mobileScore + altTextScore) / 5;
         finalScore = Math.max(0, Math.min(100, finalScore));
         
@@ -346,9 +286,6 @@ public class ScorerService {
         ));
     }
 
-    /**
-     * Container for backend and protocol information.
-     */
     public static class BackendProtocol {
         public final String backend;
         public final String protocol;
@@ -359,10 +296,6 @@ public class ScorerService {
         }
     }
 
-    /**
-     * Generic scoring result container.
-     * Holds both the score (0-100) and detailed breakdown.
-     */
     public static class ScoringResult<T> {
         public final int score;
         public final T details;

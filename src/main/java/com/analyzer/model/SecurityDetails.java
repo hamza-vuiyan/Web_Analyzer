@@ -1,23 +1,18 @@
 package com.analyzer.model;
 
-/**
- * Security assessment based on HTTPS and security headers.
- * Checks for important security practices that protect users.
- */
+/** Security assessment based on HTTPS and security headers. */
 public class SecurityDetails {
-    private boolean https;                  // Uses HTTPS protocol
-    private boolean hsts;                   // Has Strict-Transport-Security header
-    private boolean csp;                    // Has Content-Security-Policy header
-    private boolean xContentTypeOptions;    // Has X-Content-Type-Options: nosniff
-    private boolean xFrameOptions;          // Has X-Frame-Options header
-    private boolean referrerPolicy;         // Has Referrer-Policy header
-    private int overallScore;               // Total security score (0-100)
+    private boolean https;
+    private boolean hsts;
+    private boolean csp;
+    private boolean xContentTypeOptions;
+    private boolean xFrameOptions;
+    private boolean referrerPolicy;
+    private int overallScore;
 
-    // Default constructor
     public SecurityDetails() {
     }
 
-    // Constructor with all fields
     public SecurityDetails(boolean https, boolean hsts, boolean csp, 
                           boolean xContentTypeOptions, boolean xFrameOptions, 
                           boolean referrerPolicy, int overallScore) {
@@ -30,7 +25,6 @@ public class SecurityDetails {
         this.overallScore = overallScore;
     }
 
-    // Getters and Setters
     public boolean isHttps() { return https; }
     public void setHttps(boolean https) { this.https = https; }
 
